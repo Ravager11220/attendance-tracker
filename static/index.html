@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Attendance Dashboard</title>
+    <script src="/static/qrcode.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f4f7f6; margin: 0; padding: 2rem; display: flex; flex-wrap: wrap; justify-content: center; gap: 2rem; }
+        .nav-bar { width: 100%; text-align: center; margin-bottom: 1rem; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); width: 420px; text-align: center; box-sizing: border-box; }
+        #qrcode { display: flex; justify-content: center; margin-top: 20px; }
+        input { width: 80%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 6px; text-align: center; font-weight: bold; font-size: 1rem; }
+        button { background: #28a745; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-size: 0.95rem; cursor: pointer; margin-top: 10px; }
+        button:hover { background: #218838; }
+        .btn-archive { background: #007bff; text-decoration: none; display: inline-block; padding: 10px 20px; border-radius: 8px; color: white; font-weight: bold; }
+        .btn-archive:hover { background: #0056b3; }
+        ul { list-style: none; padding: 0; text-align: left; max-height: 280px; overflow-y: auto; }
+        li { padding: 8px 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <a href="/archive" class="btn-archive" target="_blank">📂 View Master Attendance Archive & History</a>
+    </div>
+
+    <div class="card">
+        <h2>Live Attendance QR</h2>
+        <label for="sessionId"><strong>Session Name / ID:</strong></label><br>
+        <input type="text" id="sessionId"><br>
+        <p style="font-size: 0.85rem; color: #666;">QR refreshes every 15 seconds</p>
+        <div id="qrcode"></div>
+    </div>
+
+    <div class="card">
+        <h2>Live Attendees (<span id="count">0</span>)</h2>
+        <button onclick="downloadCSV()">📥 Download Session CSV</button>
+        <ul id="list"></ul>
+    </div>
+
+    <script>
+        const today = new Date().toISOString().split('T')[0];
+        const sessionInput = document.getElementById('sessionId');
+
+        // Default to today's date if empty (you can manually add _2, _3 for second classes)
+        if (!sessionInput.value) {
+            sessionInput.value = `Session_${today}`;
+        }
+
+        let qrcode = new QRCode(document.getElementById("qrcode"), { width: 200, height: 200 });
+
+        async function updateQR() {
+            try {
+                let session = sessionInput.value.trim() || `Session_${today}`;
+                let res = await fetch('/api/get-token');
+                let data = await res.json();
+                let studentUrl = `${window.location.origin}/student?token=${data.token}&session=${encodeURIComponent(session)}`;
+                qrcode.makeCode(studentUrl);
+            } catch (e) { console.error(e); }
+        }
+
+        async function fetchRecords() {
+            try {
+                let session = sessionInput.value.trim() || `Session_${today}`;
+                let res = await fetch(`/api/records?session_id=${encodeURIComponent(session)}`);
+                let data = await res.json();
+                let list = document.getElementById('list');
+                list.innerHTML = '';
+                document.getElementById('count').innerText = data.length;
+                data.forEach(r => {
+                    let li = document.createElement('li');
+                    li.innerHTML = `<strong>${r.roll_number}</strong> <span>${r.timestamp.split(' ')[1]}</span>`;
+                    list.appendChild(li);
+                });
+            } catch (e) { console.error(e); }
+        }
+
+        function downloadCSV() {
+            let session = sessionInput.value.trim() || `Session_${today}`;
+            window.location.href = `/api/export-csv?session_id=${encodeURIComponent(session)}`;
+        }
+
+        sessionInput.addEventListener('change', () => { 
+            updateQR(); 
+            fetchRecords(); 
+        });
+
+        updateQR();
+        setInterval(updateQR, 15000); // 15 seconds interval
+        fetchRecords();
+        setInterval(fetchRecords, 3000);
+    </script>
+</body>
+</html>

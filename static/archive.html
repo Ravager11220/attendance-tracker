@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Archive & History</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f4f7f6; margin: 0; padding: 2rem; color: #333; }
+        .container { max-width: 900px; margin: auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        h1 { margin: 0; color: #1a1a1a; }
+        .btn-back { background: #6c757d; color: white; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 0.9rem; }
+        .btn-back:hover { background: #5a6268; }
+        
+        .search-box { width: 100%; padding: 12px; font-size: 1rem; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 2rem; box-sizing: border-box; }
+        
+        .session-card { background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 1.5rem; margin-bottom: 1.5rem; }
+        .session-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-bottom: 1rem; }
+        .session-title { font-size: 1.2rem; font-weight: bold; color: #007bff; }
+        .session-meta { font-size: 0.85rem; color: #666; margin-top: 4px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 0.95rem; }
+        th { background: #f8f9fa; color: #495057; }
+        
+        .badge { background: #28a745; color: white; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Master Attendance History</h1>
+            <a href="/" class="btn-back">← Back to Live Dashboard</a>
+        </header>
+
+        <input type="text" id="searchInput" class="search-box" placeholder="Search by Roll Number or Session Name..." onkeyup="filterRecords()">
+
+        <div id="archiveContainer">
+            <p style="text-align: center; color: #666;">Loading past records...</p>
+        </div>
+    </div>
+
+    <script>
+        let allSessions = [];
+
+        async function fetchArchive() {
+            try {
+                let res = await fetch('/api/past-sessions');
+                allSessions = await res.json();
+                renderSessions(allSessions);
+            } catch (e) {
+                console.error(e);
+                document.getElementById('archiveContainer').innerHTML = '<p style="color: red; text-align: center;">Failed to load archive data.</p>';
+            }
+        }
+
+        function renderSessions(sessions) {
+            let container = document.getElementById('archiveContainer');
+            container.innerHTML = '';
+
+            if (sessions.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666;">No attendance records found in any database files yet.</p>';
+                return;
+            }
+
+            sessions.forEach(s => {
+                let card = document.createElement('div');
+                card.className = 'session-card';
+                card.setAttribute('data-session', s.session_id.toLowerCase());
+
+                let rows = s.records.map((r, idx) => `
+                    <tr data-roll="${r.roll_number.toLowerCase()}">
+                        <td>${idx + 1}</td>
+                        <td><strong>${r.roll_number}</strong></td>
+                        <td>${r.timestamp}</td>
+                    </tr>
+                `).join('');
+
+                card.innerHTML = `
+                    <div class="session-header">
+                        <div>
+                            <span class="session-title">${s.session_id}</span>
+                            <div class="session-meta">Database: <code>${s.db_file}</code></div>
+                        </div>
+                        <div>
+                            <span class="badge">${s.total_students} Students Present</span>
+                        </div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">#</th>
+                                <th>Roll Number</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows}
+                        </tbody>
+                    </table>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function filterRecords() {
+            let query = document.getElementById('searchInput').value.toLowerCase();
+            let cards = document.querySelectorAll('.session-card');
+
+            cards.forEach(card => {
+                let sessionName = card.getAttribute('data-session');
+                let rows = card.querySelectorAll('tbody tr');
+                let matchFound = sessionName.includes(query);
+
+                rows.forEach(row => {
+                    let roll = row.getAttribute('data-roll');
+                    if (roll.includes(query) || sessionName.includes(query)) {
+                        row.style.display = '';
+                        matchFound = true;
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+
+                card.style.display = matchFound ? '' : 'none';
+            });
+        }
+
+        fetchArchive();
+    </script>
+</body>
+</html>

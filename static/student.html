@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mark Attendance</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); width: 100%; max-width: 350px; text-align: center; }
+        input { width: 100%; padding: 10px; margin: 15px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 1rem; text-transform: uppercase; }
+        button { background: #007bff; color: white; border: none; padding: 12px; width: 100%; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        #message { margin-top: 15px; font-weight: 500; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Attendance Verification</h2>
+        <p id="sessionLabel" style="font-size: 0.85rem; color: #555;"></p>
+        <form id="attendanceForm">
+            <input type="text" id="rollNumber" placeholder="Enter Roll Number" required autocomplete="off">
+            <button type="submit" id="submitBtn">Verify Fingerprint & Submit</button>
+        </form>
+        <p id="message"></p>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const session_id = urlParams.get('session');
+
+        if (session_id) {
+            document.getElementById('sessionLabel').innerText = `Session: ${session_id}`;
+            
+            // Check if this device already submitted attendance for this session
+            const storedRoll = localStorage.getItem(`attendance_submitted_${session_id}`);
+            if (storedRoll) {
+                lockForm(`Attendance already submitted on this device for roll: ${storedRoll}`);
+            }
+        }
+
+        function lockForm(message) {
+            document.getElementById('attendanceForm').style.display = 'none';
+            const msg = document.getElementById('message');
+            msg.style.color = 'green';
+            msg.innerText = message;
+        }
+
+        document.getElementById('attendanceForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const rollNumber = document.getElementById('rollNumber').value.trim().toUpperCase();
+            const msg = document.getElementById('message');
+            const btn = document.getElementById('submitBtn');
+
+            if (!token || !session_id) {
+                msg.style.color = 'red';
+                msg.innerText = 'Invalid or missing QR session token.';
+                return;
+            }
+
+            if (!window.PublicKeyCredential) {
+                msg.style.color = 'red';
+                msg.innerText = 'WebAuthn not supported on this browser.';
+                return;
+            }
+
+            try {
+                btn.disabled = true;
+                msg.style.color = '#333';
+                msg.innerText = 'Please confirm your fingerprint/biometrics...';
+
+                const challenge = new Uint8Array(32);
+                window.crypto.getRandomValues(challenge);
+                
+                const credential = await navigator.credentials.create({
+                    publicKey: {
+                        challenge: challenge,
+                        rp: { name: "College Attendance Tracker" },
+                        user: {
+                            id: new TextEncoder().encode(rollNumber),
+                            name: rollNumber,
+                            displayName: rollNumber
+                        },
+                        pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                        timeout: 60000,
+                        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" }
+                    }
+                });
+
+                msg.innerText = 'Submitting attendance...';
+
+                let response = await fetch('/api/mark-attendance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        roll_number: rollNumber, 
+                        token: token,
+                        session_id: session_id,
+                        credential_id: credential.id 
+                    })
+                });
+
+                let result = await response.json();
+                if (response.ok) {
+                    // Save to localStorage to lock this device out for this session
+                    localStorage.setItem(`attendance_submitted_${session_id}`, rollNumber);
+                    lockForm(result.message);
+                } else {
+                    msg.style.color = 'red';
+                    msg.innerText = result.detail;
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                console.error(err);
+                msg.style.color = 'red';
+                msg.innerText = 'Biometric verification cancelled or failed.';
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
